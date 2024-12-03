@@ -7,6 +7,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('userApp.urls')),
     path('expense/', include('expenses.urls')),
+    path('reimbursement/', include('reimbursements.urls')),
+    path('policy/', include('policies.urls')),
 ]
 
 # Add media file serving during development

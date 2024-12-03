@@ -1,3 +1,10 @@
 from django.db import models
+from django.conf import settings
 
-# Create your models here.
+class Policy(models.Model):
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE) 
+    description = models.TextField()
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Policy created by {self.created_by.username} on {self.created_date.strftime('%Y-%m-%d')}"

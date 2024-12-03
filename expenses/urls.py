@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     CreateExpenseView, GetAllExpensesView, GetExpenseByIdView,
     GetExpensesByCategoryView, GetExpensesByStatusView, 
-    GetExpensesByLoggedInUserView, UpdateExpenseView, DeleteExpenseView
+    GetExpensesByLoggedInUserView, UpdateExpenseView, DeleteExpenseView, AcceptExpenseView,
+    RejectExpenseView, MarkExpenseAsPaidView,ManagerGetExpensesView
 )
 
 urlpatterns = [
@@ -14,4 +15,8 @@ urlpatterns = [
     path('user/', GetExpensesByLoggedInUserView.as_view(), name='get-expenses-by-user'),
     path('update/<int:expense_id>/', UpdateExpenseView.as_view(), name='update-expense'),
     path('delete/<int:expense_id>/', DeleteExpenseView.as_view(), name='delete-expense'),
+    path('accept/<int:expense_id>/', AcceptExpenseView.as_view(), name='accept-expense'),
+    path('reject/<int:expense_id>/', RejectExpenseView.as_view(), name='reject-expense'),
+    path('mark-paid/<int:expense_id>/', MarkExpenseAsPaidView.as_view(), name='mark_expense_as_paid'),
+    path('manager/', ManagerGetExpensesView.as_view(), name='manager_get-all-expenses'),
 ]

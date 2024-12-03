@@ -1,6 +1,8 @@
 from django.apps import AppConfig
-
+from .scheduler import start
 
 class ReimbursementsConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
     name = 'reimbursements'
+
+    def ready(self):
+        start()

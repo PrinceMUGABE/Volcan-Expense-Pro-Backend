@@ -10,6 +10,7 @@ from .views import (
     update_user,
     delete_user_by_id,
     contact_us,
+    manager_list_all_users,
 )
 
 urlpatterns = [
@@ -20,7 +21,7 @@ urlpatterns = [
     path('login/', login_user, name='login_user'),
     
     # Reset Password
-    path('reset-password/', reset_password, name='reset_password'),
+    path('forget_password/', reset_password, name='reset_password'),
     
     # User Management
     path('users/', list_all_users, name='list_all_users'),  # List all users (admin only)
@@ -30,4 +31,5 @@ urlpatterns = [
     path('email/', get_user_by_email, name='get_user_by_email'),  # Get a user by email
     path('phone/', get_user_by_phone, name='get_user_by_phone'),  # Get a user by phone number
     path('contact/', contact_us, name='contact'),
+     path('manager/', manager_list_all_users, name='manager_list_all_users'),
 ]

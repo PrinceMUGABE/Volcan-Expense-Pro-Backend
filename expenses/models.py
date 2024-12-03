@@ -25,6 +25,13 @@ class Expense(models.Model):
     video = models.FileField(upload_to='expense_videos/', blank=True, null=True)  # Video evidence
     date = models.DateField(blank=True, null=True)  # Expense date (parsed from receipt, if available)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')  # Approval status
+    
+    reimbursement_status = models.CharField(
+        max_length=20,
+        choices=[('pending', 'Pending'), ('paid', 'Paid'), ('rejected', 'Rejected')],
+        default='pending'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)  # When the expense was logged
 
     def __str__(self):

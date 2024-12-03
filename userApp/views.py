@@ -216,6 +216,12 @@ from rest_framework.response import Response
 from django.core.exceptions import ObjectDoesNotExist
 from .models import CustomUser
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.core.exceptions import ObjectDoesNotExist
+from .models import CustomUser
+
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def update_user(request, user_id):
@@ -231,16 +237,17 @@ def update_user(request, user_id):
         user = CustomUser.objects.get(id=user_id)
 
         # Allow access only if the requesting user is admin or updating their own data
-        if request.user.role != 'admin' and request.user.id != user.id:
-            return Response({"error": "You are not authorized to update this user."}, status=403)
+        # If you want to restrict update access based on roles, you can add this check as well
+        # if request.user.role != 'admin' and request.user.id != user.id and request.user.role != 'manager':
+        #     return Response({"error": "You are not authorized to update this user."}, status=403)
 
-        # Check for duplicate phone number
-        if CustomUser.objects.filter(phone_number=phone_number).exclude(id=user.id).exists():
-            return Response({"error": "A user with this phone number already exists."}, status=400)
+        # Check for duplicate phone number if it's different from the current one
+        if phone_number != user.phone_number and CustomUser.objects.filter(phone_number=phone_number).exists():
+            return Response({"error": "This phone number is already assigned to another user."}, status=400)
 
-        # Check for duplicate email
-        if CustomUser.objects.filter(email=email).exclude(id=user.id).exists():
-            return Response({"error": "A user with this email address already exists."}, status=400)
+        # Check for duplicate email if it's different from the current one
+        if email != user.email and CustomUser.objects.filter(email=email).exists():
+            return Response({"error": "This email address is already assigned to another user."}, status=400)
 
         # Update user fields
         user.phone_number = phone_number
@@ -252,7 +259,7 @@ def update_user(request, user_id):
 
     except ObjectDoesNotExist:
         return Response({"error": "User with the given ID does not exist."}, status=404)
-  
+
     
 
 
@@ -268,14 +275,16 @@ def list_all_users(request):
     return Response({"users": list(users)}, status=200)
 
 
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_by_id(request, user_id):
     try:
         user = CustomUser.objects.select_related('created_by').get(id=user_id)
         
-        if request.user.role != 'admin' and request.user.id != user.id:
-            return Response({"error": "You are not authorized to access this user."}, status=403)
+        # if request.user.role != 'admin' and request.user.id != user.id or request.user.role != 'manager' and request.user.id != user.id:
+        #     return Response({"error": "You are not authorized to access this user."}, status=403)
         
         created_by_user = user.created_by
         return Response({
@@ -427,3 +436,20 @@ def contact_us(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
    
+   
+   
+   # Manager Drivers
+   
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def manager_list_all_users(request):
+    if request.user.role != 'manager':
+        return Response({"error": "You are not authorized to view this resource."}, status=403)
+    
+    # Filter users where 'created_by' matches the logged-in user's ID
+    users = CustomUser.objects.filter(created_by=request.user).values(
+        'id', 'phone_number', 'email', 'role', 'created_at',
+        'created_by__id', 'created_by__phone_number', 'created_by__email', 'created_by__role', 'created_by__created_at',
+    )
+    
+    return Response({"users": list(users)}, status=200)
