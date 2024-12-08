@@ -159,7 +159,8 @@ def reset_password(request):
     try:
         # Find the user
         user = CustomUser.objects.get(phone_number=phone_number)
-
+        
+    
         # Update the user's password
         user.set_password(new_password)
         user.save()
@@ -171,6 +172,8 @@ def reset_password(request):
             from_email="no-reply@expensepro.com",
             recipient_list=[user.email],
         )
+        
+        print('Password Changed successfully and can now login')
 
         return Response({"message": "Password reset successfully. A confirmation has been sent to your email."}, status=200)
 

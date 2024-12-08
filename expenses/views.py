@@ -63,10 +63,15 @@ class CreateExpenseView(APIView):
         if not category:
             return Response({"error": "Expense category is required."}, status=status.HTTP_400_BAD_REQUEST)
         
-        if not video:
-            return Response({"error": "Video is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Save the file
+        
+        
+        user = request.user
+        if user.role not in ['admin', 'manager']:
+            if not video:
+                return Response({"error": "Video is required."}, status=status.HTTP_400_BAD_REQUEST)
+                # Save the file
+                
+                
         receipt_path = os.path.join(settings.MEDIA_ROOT, 'receipts')
         os.makedirs(receipt_path, exist_ok=True)
 
