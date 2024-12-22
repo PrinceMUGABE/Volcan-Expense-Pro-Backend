@@ -20,7 +20,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Expense
-        fields = ['id', 'user', 'category', 'amount', 'receipt', 'video', 'video_base64', 'date', 'status', 'reimbursement_status', 'created_at']
+        fields = ['id', 'user', 'category', 'vendor', 'amount', 'receipt', 'video', 'video_base64', 'date', 'status', 'reimbursement_status', 'created_at']
 
     def get_video_base64(self, obj):
         if obj.video and hasattr(obj.video, 'path'):
