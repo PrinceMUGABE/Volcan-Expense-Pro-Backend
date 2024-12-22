@@ -39,7 +39,17 @@ from rest_framework import status
 from pytesseract import pytesseract
 from userApp.models import CustomUser
 from django.core.exceptions import ObjectDoesNotExist
-
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from datetime import datetime
+import os
+from django.conf import settings
+import pytesseract
+from PIL import Image
+from pdf2image import convert_from_path
+import re
 
 
 
@@ -52,155 +62,117 @@ class CreateExpenseView(APIView):
         category = request.data.get('category')
         receipt = request.FILES.get('receipt')
         video = request.FILES.get('video')
-        date = ''
-        amount = ''
-        status_value = 'pending'
-
-        # Validate required fields
-        if not receipt:
-            return Response({"error": "Receipt is required."}, status=status.HTTP_400_BAD_REQUEST)
+        submitted_date = request.data.get('date')
+        submitted_amount = request.data.get('amount')
         
+        user = request.user
+        # Set status based on user role
+        status_value = 'approved' if user.role in ['admin', 'manager'] else 'pending'
+
+        # Validate common required fields
         if not category:
             return Response({"error": "Expense category is required."}, status=status.HTTP_400_BAD_REQUEST)
         
+        if not submitted_date:
+            return Response({"error": "Date is required."}, status=status.HTTP_400_BAD_REQUEST)
         
-        
-        user = request.user
-        if user.role not in ['admin', 'manager']:
-            if not video:
-                return Response({"error": "Video is required."}, status=status.HTTP_400_BAD_REQUEST)
-                # Save the file
-                
-                
-        receipt_path = os.path.join(settings.MEDIA_ROOT, 'receipts')
-        os.makedirs(receipt_path, exist_ok=True)
+        if not submitted_amount:
+            return Response({"error": "Amount is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        receipt_full_path = os.path.join(receipt_path, receipt.name)
-        with open(receipt_full_path, 'wb+') as destination:
-            for chunk in receipt.chunks():
-                destination.write(chunk)
-
-        # Process the file to extract text
         try:
-            extracted_text = self.extract_text_from_file(receipt_full_path)
-            print(f"Extracted Text: {extracted_text}")  # Log the extracted text for debugging
+            submitted_amount = float(submitted_amount)
+        except ValueError:
+            return Response({"error": "Invalid amount format."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Extract date and amount
-            extracted_date, extracted_amount = self.extract_date_and_amount(extracted_text)
+        # Role-based validation for receipt and video
+        if user.role not in ['admin', 'manager']:
+            if not video or not receipt:
+                return Response({
+                    "error": "Both video and receipt are required for non-admin/manager users."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Process receipt only if it's provided
+            if receipt:
+                receipt_path = os.path.join(settings.MEDIA_ROOT, 'receipts')
+                os.makedirs(receipt_path, exist_ok=True)
+                receipt_full_path = os.path.join(receipt_path, receipt.name)
+                
+                with open(receipt_full_path, 'wb+') as destination:
+                    for chunk in receipt.chunks():
+                        destination.write(chunk)
 
-            # Validate extracted values
-            if not extracted_date:
-                return Response(
-                    {"error": "Failed to extract a valid date from the receipt."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if not extracted_amount:
-                return Response(
-                    {"error": "Failed to extract a valid amount from the receipt."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                try:
+                    extracted_text = self.extract_text_from_file(receipt_full_path)
+                    extracted_date, extracted_amount = self.extract_date_and_amount(extracted_text)
 
-            # Log extracted date and amount for debugging
-            print(f"Extracted Date: {extracted_date}")
-            print(f"Extracted Amount: {extracted_amount}")
+                    if not extracted_date or not extracted_amount:
+                        return Response({
+                            "error": "Failed to extract valid date or amount from the receipt."
+                        }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Override with extracted values if available
-            date = extracted_date
-            amount = extracted_amount
+                    # Date validation
+                    try:
+                        if '-' in extracted_date:
+                            extracted_date_obj = datetime.strptime(extracted_date, '%Y-%m-%d')
+                        elif '/' in extracted_date:
+                            extracted_date_obj = datetime.strptime(extracted_date, '%d/%m/%Y')
+                        
+                        submitted_date_obj = datetime.strptime(submitted_date, '%Y-%m-%d')
+
+                        if extracted_date_obj.date() != submitted_date_obj.date():
+                            return Response({
+                                "error": "Submitted date does not match the date on the receipt.",
+                                "submitted_date": submitted_date,
+                                "receipt_date": extracted_date
+                            }, status=status.HTTP_400_BAD_REQUEST)
+
+                    except ValueError as e:
+                        return Response({
+                            "error": f"Error processing dates: {str(e)}"
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Amount validation
+                    tolerance = 0.01
+                    if abs(extracted_amount - submitted_amount) > tolerance:
+                        return Response({
+                            "error": "Submitted amount does not match the amount on the receipt.",
+                            "submitted_amount": submitted_amount,
+                            "receipt_amount": extracted_amount
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                except Exception as e:
+                    return Response({
+                        "error": f"Failed to process the receipt: {str(e)}"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create expense record
+        try:
+            expense = Expense.objects.create(
+                user=user,
+                category=category,
+                amount=submitted_amount,
+                receipt=receipt,
+                video=video,
+                date=submitted_date,
+                status=status_value,  # Using the role-based status
+            )
+
+            response_data = {
+                "id": expense.id,
+                "category": expense.category,
+                "amount": str(expense.amount),
+                "receipt": expense.receipt.url if expense.receipt else None,
+                "video": expense.video.url if expense.video else None,
+                "date": expense.date,
+                "reimbursement_status": expense.reimbursement_status,
+                "status": expense.status,
+            }
+            return Response(response_data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            return Response({"error": f"Failed to process the receipt: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Create the expense record
-        expense = Expense.objects.create(
-            user=request.user,
-            category=category,
-            amount=amount,
-            receipt=receipt,
-            video=video,
-            date=date,
-            status=status_value,
-        )
-
-        # Prepare response data
-        response_data = {
-            "id": expense.id,
-            "category": expense.category,
-            "amount": str(expense.amount),
-            "receipt": expense.receipt.url,
-            "video": expense.video.url if expense.video else None,
-            "date": expense.date,
-            "reimbursement_status": expense.reimbursement_status,
-            "status": expense.status,
-        }
-        return Response(response_data, status=status.HTTP_201_CREATED)
-
-    def extract_text_from_file(self, file_path):
-    
-        
-        # Set the path to Tesseract-OCR executable
-        pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-        # Check if file is a PDF or an image
-        if file_path.lower().endswith('.pdf'):
-            text = ''
-            poppler_path = r'C:\Program Files\poppler-24.08.0\Library\bin'  # Update this path
-            pages = convert_from_path(file_path, poppler_path=poppler_path)
-            for page in pages:
-                text += pytesseract.image_to_string(page)
-            return text
-        elif file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-            return pytesseract.image_to_string(Image.open(file_path))
-        else:
-            raise ValueError("Unsupported file type. Only images and PDFs are allowed.")
-
-
-    
-    def extract_date_and_amount(self, text):
-        # Define keywords for amounts and dates
-        amount_keywords = [
-            "Total", "Amount", "Grand Total", "Balance Due", "Payable Amount",
-            "Due Amount", "Net Payable", "Total Amount Due", "Total Payable",
-            "Amount Paid", "Sum", "Subtotal", "Charge", "TOTAL AMOUNT", "Paid", 
-            "Total net price", "Total Gross", "Total Price", "Total gross price", "Balance"
-        ]
-        date_keywords = [
-            "Date", "Issued On", "Receipt Date", "Invoice Date", "Transaction Date",
-            "Billing Date", "Order Date", "Dated", "Due Date", "Issued Date"
-        ]
-
-        # Enhanced patterns for amount and date
-        amount_pattern = (
-            r'(\b(?:' + '|'.join(re.escape(kw) for kw in amount_keywords) + r')\b)'
-            r'\s*[:\-]?\s*([$€£]?[\d,.]+(?:\s?(USD|EUR|GBP|RWF)?)?)'
-        )
-        date_pattern = (
-            r'(\b(?:' + '|'.join(re.escape(kw) for kw in date_keywords) + r')\b)'
-            r'\s*[:\-]?\s*(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})'
-        )
-
-        # Extract date
-        date_match = re.search(date_pattern, text, re.IGNORECASE)
-        extracted_date = date_match.group(2) if date_match else None
-
-        # Extract amounts and clean them
-        amounts = []
-        for match in re.finditer(amount_pattern, text, re.IGNORECASE):
-            raw_amount = match.group(2)
-            cleaned_amount = re.sub(r'[^\d.]', '', raw_amount)  # Remove non-numeric characters except '.'
-            if cleaned_amount:
-                try:
-                    amounts.append(float(cleaned_amount))
-                except ValueError:
-                    continue
-
-        # Use the largest amount as the most likely one (if multiple found)
-        extracted_amount = max(amounts) if amounts else None
-
-        return extracted_date, extracted_amount
-
-
-
+            return Response({
+                "error": f"Failed to create expense record: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 

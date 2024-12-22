@@ -14,10 +14,10 @@ class PolicySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Policy
-        fields = ['id', 'description', 'created_by', 'created_date']
+        fields = ['id', 'description', 'created_by', 'name', 'created_date']
 
 
 class UpdatePolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = Policy
-        fields = ['id', 'description']
+        fields = ['id', 'description', 'name']
