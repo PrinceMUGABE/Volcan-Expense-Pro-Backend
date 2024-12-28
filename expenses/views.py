@@ -120,7 +120,7 @@ class CreateExpenseView(APIView):
             r"(?:Amount Due|AMOUNT DUE|Total Due|TOTAL DUE|Balance Due|BALANCE DUE):?\s*[\$\€\£\¥]?\s*\d+[,.]\d{2}\b",
             
             # Payment-specific amounts
-            r"(?:Card Payment|CARD PAYMENT|Cash Payment|CASH PAYMENT|Payment Amount|PAYMENT AMOUNT):?\s*[\$\€\£\¥]?\s*\d+[,.]\d{2}\b",
+            r"(?:Card Payment|CARD PAYMENT|Cash Payment|CASH PAYMENT|Payment Amount|PAYMENT AMOUNT|TOTAL|Total):?\s*[\$\€\£\¥]?\s*\d+[,.]\d{2}\b",
             
             # Simple currency amounts (fallback)
             r"[\$\€\£\¥]\s*\d+[,.]\d{2}\b",
@@ -133,7 +133,7 @@ class CreateExpenseView(APIView):
             r"\*\s*[\$\€\£\¥]?\s*\d+[,.]\d{2}\s*\*",
             
             # Specific receipt keywords
-            r"(?:Receipt Total|RECEIPT TOTAL|Invoice Total|INVOICE TOTAL):?\s*[\$\€\£\¥]?\s*\d+[,.]\d{2}\b",
+            r"(?:Receipt Total|RECEIPT TOTAL|Invoice Total|INVOICE TOTAL|Total|TOTAL):?\s*[\$\€\£\¥]?\s*\d+[,.]\d{2}\b",
         ]
         
         # Extract date
@@ -180,24 +180,39 @@ class CreateExpenseView(APIView):
             str: Extracted vendor name (if found)
         """
         try:
-            # Example vendor patterns: "Vendor Name: XYZ Store", "Merchant: ABC Shop"
             vendor_patterns = [
-                r"(?:Vendor Name|Merchant|Store):?\s*(\w[\w\s&.,'-]*)",
-                r"(?:Sold by|Billed To|Provided by|Retailer):?\s*(\w[\w\s&.,'-]*)",
-                r"\b(?:XYZ|ABC|Sample Vendor)\b"  # Add known vendors here if applicable
+                # Explicit identifiers
+                r"(?:Vendor Name|Merchant|Store|Sold by|Billed To|Retailer|From):?\s*(\w[\w\s&.,'-]*)",
+                
+                # Contextual identifiers
+                r"(?:Management Consultant|Consultant|Service Provider):?\s*(\w[\w\s&.,'-]*)",
+                
+                # General name patterns near key terms
+                r"(?:(?:Name|Account Name):)\s*(\w[\w\s&.,'-]*)",
+                
+                # Header-like patterns
+                r"^(?:(\w[\w\s&.,'-]*)\s*(?:LLC|Ltd|Inc|Corp|Company|Consultant))",  # Header
+                r"^\s*(\w[\w\s&.,'-]*)\s*(?:Management|Services|Financial|Consulting)",  # Business context
+                
+                # Business suffixes
+                r"(\w[\w\s&.,'-]*\b(?:LLC|Ltd|Inc|Corp))"
             ]
 
             for pattern in vendor_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    # Return the first match found
-                    return matches[0].strip()
+                # Check each pattern one by one
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    # Stop and return the first match found
+                    return match.group(1).strip()
 
         except Exception as e:
             raise Exception(f"Error extracting vendor from receipt: {str(e)}")
 
         return None
+
     
+    
+
     def post(self, request):
         category = request.data.get('category')
         receipt = request.FILES.get('receipt')
@@ -205,6 +220,8 @@ class CreateExpenseView(APIView):
         submitted_date = request.data.get('date')
         submitted_amount = request.data.get('amount')
         submitted_vendor = request.data.get('vendor')
+        
+        print(f"vendor {submitted_vendor}\n\n")
 
         user = request.user
         # Set status based on user role
@@ -229,7 +246,7 @@ class CreateExpenseView(APIView):
         if user.role not in ['admin', 'manager']:
             if not video or not receipt or not submitted_vendor:
                 return Response({
-                    "error": "Both video and receipt are required for non-admin/manager users."
+                    "error": "All fields are required."
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             # Process receipt only if it's provided
@@ -244,6 +261,31 @@ class CreateExpenseView(APIView):
 
                 try:
                     extracted_text = self.extract_text_from_file(receipt_full_path)
+                    
+                    print(f"Extracted text: {extracted_text}\n\n")
+                    
+                     # Other validations (date and amount)
+                    extracted_date, extracted_amount = self.extract_date_and_amount(extracted_text)
+                    
+                    print(f"Extracted Amount: {extracted_amount}\n\n")
+                    print(f"Extracted Date: {extracted_date}\n\n")
+
+                    if not extracted_date or not extracted_amount:
+                        return Response({
+                            "error": "Failed to extract valid date or amount from the receipt."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                    # [Date and amount validations omitted for brevity]
+                    
+                    if float(extracted_amount) != float(submitted_amount):
+                         return Response({
+                            "error": "Submitted amount does not match the amount on receipt."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                         
+                    # if extracted_date.lower() != submitted_date.lower():
+                    #      return Response({
+                    #         "error": "The date does not match the date on the receipt."
+                    #     }, status=status.HTTP_400_BAD_REQUEST)
 
                     # Extract and validate vendor
                     extracted_vendor = self.extract_vendor_from_receipt(extracted_text)
@@ -253,21 +295,16 @@ class CreateExpenseView(APIView):
                         }, status=status.HTTP_400_BAD_REQUEST)
 
                     if extracted_vendor.lower() != submitted_vendor.lower():
+                        
+                        print(f"Submitted Vender: {submitted_vendor}\n\n")
+                        print(f"Extracted Vendor: {extracted_vendor}\n\n")
                         return Response({
                             "error": "Submitted vendor does not match the vendor on the receipt.",
                             "submitted_vendor": submitted_vendor,
                             "receipt_vendor": extracted_vendor
                         }, status=status.HTTP_400_BAD_REQUEST)
 
-                    # Other validations (date and amount)
-                    extracted_date, extracted_amount = self.extract_date_and_amount(extracted_text)
-
-                    if not extracted_date or not extracted_amount:
-                        return Response({
-                            "error": "Failed to extract valid date or amount from the receipt."
-                        }, status=status.HTTP_400_BAD_REQUEST)
-
-                    # [Date and amount validations omitted for brevity]
+                   
 
                 except Exception as e:
                     return Response({
@@ -476,8 +513,8 @@ class UpdateExpenseView(APIView):
     def put(self, request, expense_id):
         try:
             expense = Expense.objects.get(id=expense_id)
-            if expense.user != request.user:
-                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            # if expense.user != request.user:
+            #     return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
             serializer = ExpenseSerializer(expense, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
@@ -497,8 +534,8 @@ class DeleteExpenseView(APIView):
     def delete(self, request, expense_id):
         try:
             expense = Expense.objects.get(id=expense_id)
-            if expense.user != request.user:
-                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            # if expense.user != request.user:
+            #     return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
             expense.delete()
             return Response({'message': 'Expense deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
         except Expense.DoesNotExist:
