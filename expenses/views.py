@@ -58,6 +58,40 @@ import re
 class CreateExpenseView(APIView):
     permission_classes = [IsAuthenticated]
     
+    def parse_date(self, date_str):
+        """
+        Parse date string into datetime object, handling multiple formats.
+        
+        Args:
+            date_str (str): Date string in various possible formats
+            
+        Returns:
+            datetime: Parsed datetime object or None if parsing fails
+        """
+        date_formats = [
+            '%Y-%m-%d',      # YYYY-MM-DD
+            '%d/%m/%Y',      # DD/MM/YYYY
+            '%m/%d/%Y',      # MM/DD/YYYY
+            '%d-%m-%Y',      # DD-MM-YYYY
+            '%d.%m.%Y',      # DD.MM.YYYY
+            '%d %B %Y',      # DD Month YYYY
+            '%d %b %Y',      # DD Mon YYYY
+            '%B %d %Y',      # Month DD YYYY
+            '%b %d %Y',      # Mon DD YYYY
+            '%d/%m/%y',      # DD/MM/YY
+            '%m/%d/%y',      # MM/DD/YY
+        ]
+        
+        # Clean the date string
+        date_str = date_str.strip()
+        
+        # Try each format
+        for fmt in date_formats:
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except ValueError:
+                continue
+        return None
     
     def extract_text_from_file(self, file_path):
         """
@@ -274,6 +308,24 @@ class CreateExpenseView(APIView):
                         return Response({
                             "error": "Failed to extract valid date or amount from the receipt."
                         }, status=status.HTTP_400_BAD_REQUEST)
+                        
+                    # Parse both dates
+                    parsed_extracted_date = self.parse_date(extracted_date)
+                    parsed_submitted_date = self.parse_date(submitted_date)
+                    
+                    if not parsed_extracted_date or not parsed_submitted_date:
+                        return Response({
+                            "error": "Invalid date format in receipt or submitted date."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                        
+                    # Compare dates
+                    if parsed_extracted_date != parsed_submitted_date:
+                        return Response({
+                            "error": "Submitted date does not match the date on receipt.",
+                            "submitted_date": submitted_date,
+                            "receipt_date": extracted_date
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
 
                     # [Date and amount validations omitted for brevity]
                     
@@ -556,12 +608,12 @@ class AcceptExpenseView(APIView):
             # Fetch the expense
             expense = Expense.objects.get(id=expense_id)
 
-            # Only allow authorized users to update the status (e.g., admin or expense owner)
-            if not request.user.is_staff and expense.user != request.user:
-                return Response(
-                    {'error': 'Unauthorized. Only admins or the expense owner can accept expenses.'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            # # Only allow authorized users to update the status (e.g., admin or expense owner)
+            # if not request.user.is_staff and expense.user != request.user:
+            #     return Response(
+            #         {'error': 'Unauthorized. Only admins or the expense owner can accept expenses.'},
+            #         status=status.HTTP_403_FORBIDDEN
+            #     )
 
             # Update the status to 'approved'
             expense.status = 'approved'
