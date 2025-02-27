@@ -49,3 +49,24 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         return self.phone_number
 
 
+
+
+
+
+
+
+
+
+# def make_random_password(self, length=10):
+#         """
+#         Generate a random password with the specified length
+#         """
+#         # Define character sets for password
+#         letters = string.ascii_letters
+#         digits = string.digits
+#         special_chars = "!@#$%^&*"
+        
+#         # Ensure at least one of each type
+#         password = [
+#             random.choice(letters.lower()),  # at least one lowercase
+#             random.choice(letters.upper()),  # at least one uppercase
